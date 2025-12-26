@@ -173,6 +173,16 @@ function HomePage() {
   const walletReady = !!walletClient;
   const hasChainError = walletError?.message?.includes("chain") || walletError?.message?.includes("Chain");
 
+  // Debug render state
+  useEffect(() => {
+    console.log("[DEBUG] ====== Render State ======");
+    console.log("[DEBUG] ready:", ready);
+    console.log("[DEBUG] permission:", permission);
+    console.log("[DEBUG] sessionAccount:", sessionAccount?.address);
+    console.log("[DEBUG] UI will show:", !isConnected ? "CONNECT" : !ready ? "INITIALIZING" : !permission ? "GRANT" : "DASHBOARD");
+    console.log("[DEBUG] ===========================");
+  }, [ready, permission, sessionAccount, isConnected]);
+
   return (
     <div className="min-h-screen bg-zinc-950 text-gray-100">
       {/* Grid Background */}

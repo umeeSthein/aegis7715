@@ -13,6 +13,7 @@ export default function Dashboard({ sessionAccount, ctx, safeAddress, permission
   const [monitoring, setMonitoring] = useState(false);
   const [rescuingETH, setRescuingETH] = useState(false);
   const [rescuingUSDC, setRescuingUSDC] = useState(false);
+  const [lastRescueTime, setLastRescueTime] = useState(0);
 
   const ETH_THRESHOLD = parseEther("0.005"); // If ETH drops below 0.005 → rescue remaining USDC
   const USDC_THRESHOLD = 500000n; // 0.5 USDC (6 decimals) - If USDC drops below 0.5 → rescue remaining ETH
@@ -67,10 +68,14 @@ export default function Dashboard({ sessionAccount, ctx, safeAddress, permission
           setSafeUsdcBalance((Number(safeUsdcBal) / 1000000).toFixed(2));
         }
 
-        // Smart rescue logic:
-        // If ETH drops → rescue USDC
-        // If USDC drops → rescue ETH
-        // If both drop → rescue both
+        // Smart rescue logic with cooldown
+        const now = Date.now();
+        const cooldown = 30000; // 30 seconds between rescues
+        
+        if (now - lastRescueTime < cooldown) {
+          console.log("[Rescue] Cooldown active, skipping...");
+          return;
+        }
         
         const ethLow = ethBal < ETH_THRESHOLD && ethBal > 0n;
         const usdcLow = usdcBal < USDC_THRESHOLD && usdcBal > 0n;
@@ -78,6 +83,7 @@ export default function Dashboard({ sessionAccount, ctx, safeAddress, permission
         if (ethLow && !usdcLow && usdcBal > 0n && !rescuingUSDC) {
           // ETH stolen → rescue USDC
           setRescuingUSDC(true);
+          setLastRescueTime(now);
           const msg = `⚠️ ETH below threshold! Rescuing ${(Number(usdcBal) / 1000000).toFixed(2)} USDC...`;
           addLog(msg);
           
@@ -98,6 +104,7 @@ export default function Dashboard({ sessionAccount, ctx, safeAddress, permission
         if (usdcLow && !ethLow && ethBal > 0n && !rescuingETH) {
           // USDC stolen → rescue ETH
           setRescuingETH(true);
+          setLastRescueTime(now);
           const msg = `⚠️ USDC below threshold! Rescuing ${formatEther(ethBal)} ETH...`;
           addLog(msg);
           
