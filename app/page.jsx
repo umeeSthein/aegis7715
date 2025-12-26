@@ -15,8 +15,8 @@ function HomePage() {
   const { address, isConnected } = useAccount();
   const { connect, connectors } = useConnect();
   const publicClient = usePublicClient();
+  const { data: walletClient } = useWalletClient();
   const chainId = useChainId();
-  const { data: walletClient } = useWalletClient({ chainId });
 
   // Auto-create session account
   useEffect(() => {
@@ -38,6 +38,11 @@ function HomePage() {
     
     setup();
   }, [isConnected, publicClient, sessionAccount]);
+
+  // Debug walletClient
+  useEffect(() => {
+    console.log("[DEBUG] walletClient changed:", walletClient);
+  }, [walletClient]);
 
   async function handleConnect() {
     const connector = connectors[0];
