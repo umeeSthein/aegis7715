@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from "react";
 import { formatEther, parseEther } from "viem";
+import { rescueAssets } from "../lib/smartAccount";
 
-export default function Dashboard({ aegis, safeAddress }) {
+export default function Dashboard({ sessionAccount, ctx, safeAddress, permission, eoaAddress }) {
   const [ethBalance, setEthBalance] = useState("0");
   const [usdcBalance, setUsdcBalance] = useState("0");
   const [safeEthBalance, setSafeEthBalance] = useState("0");
@@ -12,70 +13,163 @@ export default function Dashboard({ aegis, safeAddress }) {
   const [monitoring, setMonitoring] = useState(false);
 
   const ETH_THRESHOLD = parseEther("0.1");
-  const USDC_THRESHOLD = 10n * 10n ** 6n; // 10 USDC (6 decimals)
+  const USDC_THRESHOLD = 10000000n; // 10 USDC (6 decimals)
+  const USDC_ADDRESS = "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238";
 
   // Monitor balances
   useEffect(() => {
-    if (!aegis || !monitoring) return;
+    if (!ctx || !monitoring) return;
 
     const interval = setInterval(async () => {
       try {
-        // Get Smart Account balances
-        const ethBal = await aegis.publicClient.getBalance({
-          address: aegis.address,
+        // Get EOA balance (not Smart Account!)
+        const ethBal = await ctx.publicClient.getBalance({
+          address: eoaAddress,
         });
         setEthBalance(formatEther(ethBal));
 
-        // TODO: Get USDC balance
-        // const usdcBal = await aegis.publicClient.readContract({...});
-        // setUsdcBalance(formatUnits(usdcBal, 6));
+        // Get USDC balance
+        const usdcBal = await ctx.publicClient.readContract({
+          address: USDC_ADDRESS,
+          abi: [{
+            name: "balanceOf",
+            type: "function",
+            stateMutability: "view",
+            inputs: [{ type: "address" }],
+            outputs: [{ type: "uint256" }],
+          }],
+          functionName: "balanceOf",
+          args: [eoaAddress],
+        });
+        setUsdcBalance((Number(usdcBal) / 1000000).toFixed(2));
 
-        // Get Safe balances if address provided
+        // Get Safe balances
         if (safeAddress) {
-          const safeEthBal = await aegis.publicClient.getBalance({
+          const safeEthBal = await ctx.publicClient.getBalance({
             address: safeAddress,
           });
           setSafeEthBalance(formatEther(safeEthBal));
+
+          const safeUsdcBal = await ctx.publicClient.readContract({
+            address: USDC_ADDRESS,
+            abi: [{
+              name: "balanceOf",
+              type: "function",
+              stateMutability: "view",
+              inputs: [{ type: "address" }],
+              outputs: [{ type: "uint256" }],
+            }],
+            functionName: "balanceOf",
+            args: [safeAddress],
+          });
+          setSafeUsdcBalance((Number(safeUsdcBal) / 1000000).toFixed(2));
         }
 
-        // Check thresholds
-        if (ethBal < ETH_THRESHOLD) {
-          addLog("⚠️ ETH below threshold! Rescue triggered...");
-          // TODO: Trigger rescue
+        // Smart rescue logic:
+        // If ETH drops → rescue USDC
+        // If USDC drops → rescue ETH
+        // If both drop → rescue both
+        
+        const ethLow = ethBal < ETH_THRESHOLD && ethBal > 0n;
+        const usdcLow = usdcBal < USDC_THRESHOLD && usdcBal > 0n;
+        
+        if (ethLow && !usdcLow && usdcBal > 0n) {
+          // ETH stolen → rescue USDC
+          const msg = `⚠️ ETH below threshold! Rescuing ${(Number(usdcBal) / 1000000).toFixed(2)} USDC...`;
+          addLog(msg);
+          
+          try {
+            const result = await rescueAssets(ctx, permission.usdc, {
+              to: safeAddress,
+              amount: usdcBal,
+              token: USDC_ADDRESS,
+            });
+            addLog(`✅ USDC rescued! Tx: ${result.txHash.slice(0,10)}...`);
+          } catch (error) {
+            addLog(`❌ USDC rescue failed: ${error.message}`);
+          }
+        }
+        
+        if (usdcLow && !ethLow && ethBal > 0n) {
+          // USDC stolen → rescue ETH
+          const msg = `⚠️ USDC below threshold! Rescuing ${formatEther(ethBal)} ETH...`;
+          addLog(msg);
+          
+          try {
+            const result = await rescueAssets(ctx, permission.eth, {
+              to: safeAddress,
+              amount: ethBal,
+              token: "ETH",
+            });
+            addLog(`✅ ETH rescued! Tx: ${result.txHash.slice(0,10)}...`);
+          } catch (error) {
+            addLog(`❌ ETH rescue failed: ${error.message}`);
+          }
+        }
+        
+        if (ethLow && usdcLow) {
+          // Both stolen → rescue both!
+          addLog("🚨 CRITICAL! Both assets below threshold!");
+          
+          if (ethBal > 0n) {
+            try {
+              const result = await rescueAssets(ctx, permission.eth, {
+                to: safeAddress,
+                amount: ethBal,
+                token: "ETH",
+              });
+              addLog(`✅ ETH rescued! Tx: ${result.txHash.slice(0,10)}...`);
+            } catch (error) {
+              addLog(`❌ ETH rescue failed: ${error.message}`);
+            }
+          }
+          
+          if (usdcBal > 0n) {
+            try {
+              const result = await rescueAssets(ctx, permission.usdc, {
+                to: safeAddress,
+                amount: usdcBal,
+                token: USDC_ADDRESS,
+              });
+              addLog(`✅ USDC rescued! Tx: ${result.txHash.slice(0,10)}...`);
+            } catch (error) {
+              addLog(`❌ USDC rescue failed: ${error.message}`);
+            }
+          }
         }
 
       } catch (error) {
-        console.error("Monitor error:", error);
+        console.error("[Monitor] Error:", error);
       }
     }, 10000); // Every 10 seconds
 
     return () => clearInterval(interval);
-  }, [aegis, monitoring, safeAddress]);
+  }, [ctx, monitoring, safeAddress, sessionAccount]);
 
   // Load initial balances
   useEffect(() => {
-    if (!aegis) return;
+    if (!ctx) return;
 
     async function loadBalances() {
       try {
-        const ethBal = await aegis.publicClient.getBalance({
-          address: aegis.address,
+        const ethBal = await ctx.publicClient.getBalance({
+          address: eoaAddress,
         });
         setEthBalance(formatEther(ethBal));
 
         if (safeAddress) {
-          const safeEthBal = await aegis.publicClient.getBalance({
+          const safeEthBal = await ctx.publicClient.getBalance({
             address: safeAddress,
           });
           setSafeEthBalance(formatEther(safeEthBal));
         }
       } catch (error) {
-        console.error("Load error:", error);
+        console.error("[Load] Error:", error);
       }
     }
 
     loadBalances();
-  }, [aegis, safeAddress]);
+  }, [ctx, safeAddress, sessionAccount]);
 
   function addLog(message) {
     const timestamp = new Date().toLocaleTimeString();
@@ -93,16 +187,16 @@ export default function Dashboard({ aegis, safeAddress }) {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-8">
       {/* Control Panel */}
-      <div className="border border-zinc-800 p-6">
+      <div className="border-b border-zinc-800 pb-6">
         <div className="flex items-center justify-between mb-6">
           <h3 className="text-xl font-bold tracking-tight">PROTECTION DASHBOARD</h3>
           <div className="flex items-center gap-3">
             {monitoring ? (
               <>
                 <div className="w-2 h-2 bg-cyan-400 rounded-full animate-pulse"></div>
-                <span className="text-xs text-cyan-400 font-mono uppercase">MONITORING ACTIVE</span>
+                <span className="text-xs text-cyan-400 font-mono uppercase">ACTIVE</span>
                 <button
                   onClick={stopMonitoring}
                   className="border border-zinc-700 hover:border-red-500 px-4 py-1.5 text-xs font-mono uppercase transition"
@@ -123,28 +217,26 @@ export default function Dashboard({ aegis, safeAddress }) {
 
         {/* Balances Grid */}
         <div className="grid grid-cols-2 gap-6">
-          {/* Smart Account */}
+          {/* Protected Account */}
           <div className="border border-zinc-800 p-4">
-            <div className="text-[10px] text-zinc-600 uppercase tracking-wider mb-3">Protected Account</div>
-            <div className="font-mono text-xs text-zinc-500 mb-4 break-all">{aegis.address}</div>
+            <div className="text-[10px] text-zinc-600 uppercase tracking-wider mb-3">Protected Account (EOA)</div>
+            <div className="font-mono text-xs text-zinc-500 mb-4 break-all">{eoaAddress}</div>
             
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-zinc-400">ETH</span>
-                <div className="text-right">
-                  <div className="font-mono text-lg font-bold">{parseFloat(ethBalance).toFixed(4)}</div>
-                  <div className="text-[10px] text-zinc-600">Threshold: 0.1000</div>
-                </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-zinc-400">ETH</span>
+              <div className="text-right">
+                <div className="font-mono text-lg font-bold">{parseFloat(ethBalance).toFixed(4)}</div>
+                <div className="text-[10px] text-zinc-600">Threshold: 0.1000</div>
               </div>
-              
-              <div className="h-px bg-zinc-800"></div>
-              
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-zinc-400">USDC</span>
-                <div className="text-right">
-                  <div className="font-mono text-lg font-bold">{parseFloat(usdcBalance).toFixed(2)}</div>
-                  <div className="text-[10px] text-zinc-600">Threshold: 10.00</div>
-                </div>
+            </div>
+            
+            <div className="h-px bg-zinc-800 my-3"></div>
+            
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-zinc-400">USDC</span>
+              <div className="text-right">
+                <div className="font-mono text-lg font-bold">{usdcBalance}</div>
+                <div className="text-[10px] text-zinc-600">Threshold: 10.00</div>
               </div>
             </div>
           </div>
@@ -156,21 +248,19 @@ export default function Dashboard({ aegis, safeAddress }) {
               {safeAddress || "Not configured"}
             </div>
             
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-zinc-400">ETH</span>
-                <div className="font-mono text-lg font-bold text-emerald-400">
-                  {parseFloat(safeEthBalance).toFixed(4)}
-                </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-zinc-400">ETH</span>
+              <div className="font-mono text-lg font-bold text-emerald-400">
+                {parseFloat(safeEthBalance).toFixed(4)}
               </div>
-              
-              <div className="h-px bg-zinc-800"></div>
-              
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-zinc-400">USDC</span>
-                <div className="font-mono text-lg font-bold text-emerald-400">
-                  {parseFloat(safeUsdcBalance).toFixed(2)}
-                </div>
+            </div>
+            
+            <div className="h-px bg-zinc-800 my-3"></div>
+            
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-zinc-400">USDC</span>
+              <div className="font-mono text-lg font-bold text-emerald-400">
+                {safeUsdcBalance}
               </div>
             </div>
           </div>
@@ -200,25 +290,25 @@ export default function Dashboard({ aegis, safeAddress }) {
         </div>
       </div>
 
-      {/* Manual Actions */}
+      {/* Manual Test Actions */}
       <div className="border border-zinc-800 p-6">
-        <h4 className="text-sm font-bold tracking-tight uppercase mb-4">Test Actions</h4>
+        <h4 className="text-sm font-bold tracking-tight uppercase mb-4">Test Protection</h4>
         <div className="grid grid-cols-2 gap-4">
           <button
             className="border border-zinc-700 hover:border-red-500 px-6 py-3 text-sm font-mono uppercase transition"
-            onClick={() => addLog("🔴 Manual ETH drain simulated")}
+            onClick={() => addLog("💡 Use MetaMask to send ETH from Protected Account")}
           >
             SIMULATE ETH DRAIN
           </button>
           <button
-            className="border border-zinc-700 hover:border-red-500 px-6 py-3 text-sm font-mono uppercase transition"
-            onClick={() => addLog("🔴 Manual USDC drain simulated")}
+            className="border border-zinc-700 hover:border-cyan-400 px-6 py-3 text-sm font-mono uppercase transition"
+            onClick={() => addLog("💡 Use MetaMask to send USDC from Protected Account")}
           >
             SIMULATE USDC DRAIN
           </button>
         </div>
         <p className="text-xs text-zinc-600 mt-3">
-          For real testing, manually send funds from the Protected Account using MetaMask
+          Open MetaMask and manually send funds from your EOA ({eoaAddress.slice(0,8)}...) to test the rescue system.
         </p>
       </div>
     </div>

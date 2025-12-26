@@ -318,7 +318,13 @@ function HomePage() {
               </button>
             </div>
           ) : (
-            <Dashboard sessionAccount={sessionAccount} ctx={ctx} safeAddress={safeAddress} />
+            <Dashboard 
+              sessionAccount={sessionAccount} 
+              ctx={ctx} 
+              safeAddress={safeAddress} 
+              permission={permission}
+              eoaAddress={address}
+            />
           )}
         </div>
 
