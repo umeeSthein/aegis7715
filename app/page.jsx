@@ -21,20 +21,28 @@ function HomePage() {
   useEffect(() => {
     if (!address) return;
     
+    console.log("[Aegis] Loading data for address:", address);
+    
     // Load permission for this address
     const savedPermission = localStorage.getItem(`metaaegis_permission_${address}`);
+    console.log("[Aegis] Found permission in localStorage:", savedPermission ? "YES" : "NO");
+    
     if (savedPermission) {
       try {
-        setPermission(JSON.parse(savedPermission));
+        const parsed = JSON.parse(savedPermission);
+        console.log("[Aegis] Parsed permission:", parsed);
+        setPermission(parsed);
       } catch (e) {
         console.error("[Aegis] Failed to parse permission:", e);
       }
     } else {
+      console.log("[Aegis] No saved permission, setting to null");
       setPermission(null);
     }
     
     // Load safe address for this address
     const savedSafe = localStorage.getItem(`metaaegis_safe_address_${address}`);
+    console.log("[Aegis] Found safe address:", savedSafe || "NO");
     setSafeAddress(savedSafe || "");
   }, [address]);
   const { connect, connectors } = useConnect();
