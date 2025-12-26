@@ -22,7 +22,10 @@ function HomePage() {
     }
     return null;
   });
-  const [safeAddress, setSafeAddress] = useState("");
+  const [safeAddress, setSafeAddress] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return localStorage.getItem("metaaegis_safe_address") || "";
+  });
   const [loading, setLoading] = useState(false);
   const [switchingChain, setSwitchingChain] = useState(false);
 
@@ -178,6 +181,18 @@ function HomePage() {
                   {address.slice(0, 4)}···{address.slice(-4)}
                 </span>
               </div>
+              <button
+                onClick={() => {
+                  connector?.disconnect?.();
+                  localStorage.removeItem('metaaegis_permission');
+                  localStorage.removeItem('metaaegis_safe_address');
+                  localStorage.removeItem('metaaegis_session_key');
+                  window.location.reload();
+                }}
+                className="text-xs text-zinc-500 hover:text-red-400 transition"
+              >
+                DISCONNECT
+              </button>
             </div>
           ) : (
             <button
@@ -291,7 +306,11 @@ function HomePage() {
                   <input
                     type="text"
                     value={safeAddress}
-                    onChange={(e) => setSafeAddress(e.target.value)}
+                    onChange={(e) => {
+                      const newAddress = e.target.value;
+                      setSafeAddress(newAddress);
+                      localStorage.setItem("metaaegis_safe_address", newAddress);
+                    }}
                     placeholder="0x..."
                     className="w-full border border-zinc-800 focus:border-cyan-400/50 px-4 py-3 font-mono text-xs text-zinc-300 outline-none transition-all bg-transparent"
                   />
