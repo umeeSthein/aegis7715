@@ -12,8 +12,8 @@ export default function Dashboard({ sessionAccount, ctx, safeAddress, permission
   const [logs, setLogs] = useState([]);
   const [monitoring, setMonitoring] = useState(false);
 
-  const ETH_THRESHOLD = parseEther("0.1");
-  const USDC_THRESHOLD = 10000000n; // 10 USDC (6 decimals)
+  const ETH_THRESHOLD = parseEther("0.005"); // If ETH drops below 0.005 → rescue remaining USDC
+  const USDC_THRESHOLD = 500000n; // 0.5 USDC (6 decimals) - If USDC drops below 0.5 → rescue remaining ETH
   const USDC_ADDRESS = "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238";
 
   // Monitor balances
@@ -141,7 +141,7 @@ export default function Dashboard({ sessionAccount, ctx, safeAddress, permission
       } catch (error) {
         console.error("[Monitor] Error:", error);
       }
-    }, 10000); // Every 10 seconds
+    }, 3000); // Every 3 seconds
 
     return () => clearInterval(interval);
   }, [ctx, monitoring, safeAddress, sessionAccount]);
@@ -226,7 +226,7 @@ export default function Dashboard({ sessionAccount, ctx, safeAddress, permission
               <span className="text-sm text-zinc-400">ETH</span>
               <div className="text-right">
                 <div className="font-mono text-lg font-bold">{parseFloat(ethBalance).toFixed(4)}</div>
-                <div className="text-[10px] text-zinc-600">Threshold: 0.1000</div>
+                <div className="text-[10px] text-zinc-600">Alert: 0.0050</div>
               </div>
             </div>
             
@@ -236,7 +236,7 @@ export default function Dashboard({ sessionAccount, ctx, safeAddress, permission
               <span className="text-sm text-zinc-400">USDC</span>
               <div className="text-right">
                 <div className="font-mono text-lg font-bold">{usdcBalance}</div>
-                <div className="text-[10px] text-zinc-600">Threshold: 10.00</div>
+                <div className="text-[10px] text-zinc-600">Alert: 0.50</div>
               </div>
             </div>
           </div>

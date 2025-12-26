@@ -299,12 +299,12 @@ function HomePage() {
 
                 <div className="grid grid-cols-2 gap-4 pt-2">
                   <div className="border border-zinc-800 px-4 py-3">
-                    <div className="text-[10px] text-zinc-600 uppercase tracking-wider mb-1">ETH Threshold</div>
-                    <div className="text-sm font-mono text-zinc-400">0.1 ETH</div>
+                    <div className="text-[10px] text-zinc-600 uppercase tracking-wider mb-1">ETH Alert</div>
+                    <div className="text-sm font-mono text-zinc-400">0.005 ETH</div>
                   </div>
                   <div className="border border-zinc-800 px-4 py-3">
-                    <div className="text-[10px] text-zinc-600 uppercase tracking-wider mb-1">USDC Threshold</div>
-                    <div className="text-sm font-mono text-zinc-400">10 USDC</div>
+                    <div className="text-[10px] text-zinc-600 uppercase tracking-wider mb-1">USDC Alert</div>
+                    <div className="text-sm font-mono text-zinc-400">0.50 USDC</div>
                   </div>
                 </div>
               </div>
