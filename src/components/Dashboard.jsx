@@ -147,29 +147,57 @@ export default function Dashboard({ sessionAccount, ctx, safeAddress, permission
   }, [ctx, monitoring, safeAddress, sessionAccount]);
 
   // Load initial balances
-  useEffect(() => {
+  async function loadInitialBalances() {
     if (!ctx) return;
+    
+    try {
+      const ethBal = await ctx.publicClient.getBalance({
+        address: eoaAddress,
+      });
+      setEthBalance(formatEther(ethBal));
 
-    async function loadBalances() {
-      try {
-        const ethBal = await ctx.publicClient.getBalance({
-          address: eoaAddress,
+      const usdcBal = await ctx.publicClient.readContract({
+        address: USDC_ADDRESS,
+        abi: [{
+          name: "balanceOf",
+          type: "function",
+          stateMutability: "view",
+          inputs: [{ type: "address" }],
+          outputs: [{ type: "uint256" }],
+        }],
+        functionName: "balanceOf",
+        args: [eoaAddress],
+      });
+      setUsdcBalance((Number(usdcBal) / 1000000).toFixed(2));
+
+      if (safeAddress) {
+        const safeEthBal = await ctx.publicClient.getBalance({
+          address: safeAddress,
         });
-        setEthBalance(formatEther(ethBal));
+        setSafeEthBalance(formatEther(safeEthBal));
 
-        if (safeAddress) {
-          const safeEthBal = await ctx.publicClient.getBalance({
-            address: safeAddress,
-          });
-          setSafeEthBalance(formatEther(safeEthBal));
-        }
-      } catch (error) {
-        console.error("[Load] Error:", error);
+        const safeUsdcBal = await ctx.publicClient.readContract({
+          address: USDC_ADDRESS,
+          abi: [{
+            name: "balanceOf",
+            type: "function",
+            stateMutability: "view",
+            inputs: [{ type: "address" }],
+            outputs: [{ type: "uint256" }],
+          }],
+          functionName: "balanceOf",
+          args: [safeAddress],
+        });
+        setSafeUsdcBalance((Number(safeUsdcBal) / 1000000).toFixed(2));
       }
+    } catch (error) {
+      console.error("[Load] Error:", error);
     }
+  }
 
-    loadBalances();
-  }, [ctx, safeAddress, sessionAccount]);
+  useEffect(() => {
+    loadInitialBalances();
+  }, [ctx, safeAddress, eoaAddress]);
 
   function addLog(message) {
     const timestamp = new Date().toLocaleTimeString();
@@ -179,6 +207,9 @@ export default function Dashboard({ sessionAccount, ctx, safeAddress, permission
   function startMonitoring() {
     setMonitoring(true);
     addLog("🛡️ Protection monitoring started");
+    
+    // Load balances immediately when starting
+    loadInitialBalances();
   }
 
   function stopMonitoring() {
