@@ -11,6 +11,8 @@ export default function Dashboard({ sessionAccount, ctx, safeAddress, permission
   const [safeUsdcBalance, setSafeUsdcBalance] = useState("0");
   const [logs, setLogs] = useState([]);
   const [monitoring, setMonitoring] = useState(false);
+  const [rescuingETH, setRescuingETH] = useState(false);
+  const [rescuingUSDC, setRescuingUSDC] = useState(false);
 
   const ETH_THRESHOLD = parseEther("0.005"); // If ETH drops below 0.005 → rescue remaining USDC
   const USDC_THRESHOLD = 500000n; // 0.5 USDC (6 decimals) - If USDC drops below 0.5 → rescue remaining ETH
@@ -73,8 +75,9 @@ export default function Dashboard({ sessionAccount, ctx, safeAddress, permission
         const ethLow = ethBal < ETH_THRESHOLD && ethBal > 0n;
         const usdcLow = usdcBal < USDC_THRESHOLD && usdcBal > 0n;
         
-        if (ethLow && !usdcLow && usdcBal > 0n) {
+        if (ethLow && !usdcLow && usdcBal > 0n && !rescuingUSDC) {
           // ETH stolen → rescue USDC
+          setRescuingUSDC(true);
           const msg = `⚠️ ETH below threshold! Rescuing ${(Number(usdcBal) / 1000000).toFixed(2)} USDC...`;
           addLog(msg);
           
@@ -87,11 +90,14 @@ export default function Dashboard({ sessionAccount, ctx, safeAddress, permission
             addLog(`✅ USDC rescued! Tx: ${result.txHash.slice(0,10)}...`);
           } catch (error) {
             addLog(`❌ USDC rescue failed: ${error.message}`);
+          } finally {
+            setRescuingUSDC(false);
           }
         }
         
-        if (usdcLow && !ethLow && ethBal > 0n) {
+        if (usdcLow && !ethLow && ethBal > 0n && !rescuingETH) {
           // USDC stolen → rescue ETH
+          setRescuingETH(true);
           const msg = `⚠️ USDC below threshold! Rescuing ${formatEther(ethBal)} ETH...`;
           addLog(msg);
           
@@ -104,6 +110,8 @@ export default function Dashboard({ sessionAccount, ctx, safeAddress, permission
             addLog(`✅ ETH rescued! Tx: ${result.txHash.slice(0,10)}...`);
           } catch (error) {
             addLog(`❌ ETH rescue failed: ${error.message}`);
+          } finally {
+            setRescuingETH(false);
           }
         }
         
@@ -111,7 +119,8 @@ export default function Dashboard({ sessionAccount, ctx, safeAddress, permission
           // Both stolen → rescue both!
           addLog("🚨 CRITICAL! Both assets below threshold!");
           
-          if (ethBal > 0n) {
+          if (ethBal > 0n && !rescuingETH) {
+            setRescuingETH(true);
             try {
               const result = await rescueAssets(ctx, permission.eth, {
                 to: safeAddress,
@@ -121,10 +130,13 @@ export default function Dashboard({ sessionAccount, ctx, safeAddress, permission
               addLog(`✅ ETH rescued! Tx: ${result.txHash.slice(0,10)}...`);
             } catch (error) {
               addLog(`❌ ETH rescue failed: ${error.message}`);
+            } finally {
+              setRescuingETH(false);
             }
           }
           
-          if (usdcBal > 0n) {
+          if (usdcBal > 0n && !rescuingUSDC) {
+            setRescuingUSDC(true);
             try {
               const result = await rescueAssets(ctx, permission.usdc, {
                 to: safeAddress,
@@ -134,6 +146,8 @@ export default function Dashboard({ sessionAccount, ctx, safeAddress, permission
               addLog(`✅ USDC rescued! Tx: ${result.txHash.slice(0,10)}...`);
             } catch (error) {
               addLog(`❌ USDC rescue failed: ${error.message}`);
+            } finally {
+              setRescuingUSDC(false);
             }
           }
         }
