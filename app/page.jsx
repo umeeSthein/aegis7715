@@ -144,7 +144,13 @@ function HomePage() {
       const perm = await grantPermissions(sessionAccount, walletClient, chainId);
       setPermission(perm);
       
+      console.log("[Aegis] Saving permission to localStorage:", `metaaegis_permission_${address}`);
+      console.log("[Aegis] Permission data:", perm);
       localStorage.setItem(`metaaegis_permission_${address}`, JSON.stringify(perm));
+      
+      // Verify saved
+      const saved = localStorage.getItem(`metaaegis_permission_${address}`);
+      console.log("[Aegis] Verified saved:", saved ? "YES" : "NO");
       
       console.log("[Aegis] ✅ Permissions granted!");
     } catch (error) {
