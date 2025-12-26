@@ -47,7 +47,13 @@ function HomePage() {
   }
 
   async function handleGrantProtection() {
+    console.log("[DEBUG] handleGrantProtection called");
+    console.log("[DEBUG] sessionAccount:", sessionAccount);
+    console.log("[DEBUG] walletClient:", walletClient);
+    console.log("[DEBUG] chainId:", chainId);
+    
     if (!sessionAccount || !walletClient) {
+      console.error("[DEBUG] Missing:", { sessionAccount: !!sessionAccount, walletClient: !!walletClient });
       alert("Session account or wallet client not ready!");
       return;
     }
