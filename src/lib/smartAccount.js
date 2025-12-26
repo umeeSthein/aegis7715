@@ -18,23 +18,23 @@ const SEPOLIA_RPC = process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL || "https://ethereum
 const SEPOLIA_CHAIN_ID = 11155111;
 
 // Get or create session key from localStorage
-function getSessionKey() {
-  if (typeof window === "undefined") return null;
+function getSessionKey(eoaAddress) {
+  if (typeof window === "undefined" || !eoaAddress) return null;
   
-  let privKey = localStorage.getItem("metaaegis_session_key");
+  let privKey = localStorage.getItem(`metaaegis_session_key_${eoaAddress}`);
   if (!privKey) {
     privKey = generatePrivateKey();
-    localStorage.setItem("metaaegis_session_key", privKey);
-    console.log("[SA] 🔑 Generated new session key");
+    localStorage.setItem(`metaaegis_session_key_${eoaAddress}`, privKey);
+    console.log("[SA] 🔑 Generated new session key for", eoaAddress);
   }
   
   return privateKeyToAccount(privKey);
 }
 
-export async function createSessionAccount(publicClient) {
+export async function createSessionAccount(publicClient, eoaAddress) {
   console.log("[SA] 🎫 Creating Session Account...");
   
-  const account = getSessionKey();
+  const account = getSessionKey(eoaAddress);
   if (!account) throw new Error("Failed to create session key");
   
   console.log("[SA] 🔑 Session key address:", account.address);
@@ -128,10 +128,10 @@ export async function grantPermissions(sessionAccount, walletClient, chainId) {
   }
 }
 
-export async function initSmartAccountContext(publicClient) {
+export async function initSmartAccountContext(publicClient, eoaAddress) {
   console.log("[SA] 🏗️ Init Smart Account Context...");
 
-  const sessionAccount = await createSessionAccount(publicClient);
+  const sessionAccount = await createSessionAccount(publicClient, eoaAddress);
 
   console.log("[SA] 📦 Setup Bundler & Pimlico...");
   const bundlerClient = bundlerClientFactory(SEPOLIA_CHAIN_ID);

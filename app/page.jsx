@@ -10,26 +10,33 @@ const SEPOLIA_CHAIN_ID = 11155111;
 function HomePage() {
   const [sessionAccount, setSessionAccount] = useState(null);
   const [ctx, setCtx] = useState(null);
-  const [permission, setPermission] = useState(() => {
-    if (typeof window === "undefined") return null;
-    const saved = localStorage.getItem("metaaegis_permission");
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        console.error("[Aegis] Failed to parse saved permission:", e);
-      }
-    }
-    return null;
-  });
-  const [safeAddress, setSafeAddress] = useState(() => {
-    if (typeof window === "undefined") return "";
-    return localStorage.getItem("metaaegis_safe_address") || "";
-  });
+  const [permission, setPermission] = useState(null);
+  const [safeAddress, setSafeAddress] = useState("");
   const [loading, setLoading] = useState(false);
   const [switchingChain, setSwitchingChain] = useState(false);
 
   const { address, isConnected, connector } = useAccount();
+  
+  // Load data for current address
+  useEffect(() => {
+    if (!address) return;
+    
+    // Load permission for this address
+    const savedPermission = localStorage.getItem(`metaaegis_permission_${address}`);
+    if (savedPermission) {
+      try {
+        setPermission(JSON.parse(savedPermission));
+      } catch (e) {
+        console.error("[Aegis] Failed to parse permission:", e);
+      }
+    } else {
+      setPermission(null);
+    }
+    
+    // Load safe address for this address
+    const savedSafe = localStorage.getItem(`metaaegis_safe_address_${address}`);
+    setSafeAddress(savedSafe || "");
+  }, [address]);
   const { connect, connectors } = useConnect();
   const publicClient = usePublicClient();
   const chainId = useChainId();
@@ -85,15 +92,15 @@ function HomePage() {
   // Auto-create session account when connected
   useEffect(() => {
     async function setup() {
-      if (!isConnected || !publicClient || sessionAccount) return;
+      if (!isConnected || !publicClient || sessionAccount || !address) return;
       
       try {
-        console.log("[Aegis] Creating session account...");
-        const sa = await createSessionAccount(publicClient);
+        console.log("[Aegis] Creating session account for", address);
+        const sa = await createSessionAccount(publicClient, address);
         setSessionAccount(sa);
         
         console.log("[Aegis] Creating context...");
-        const context = await initSmartAccountContext(publicClient);
+        const context = await initSmartAccountContext(publicClient, address);
         setCtx(context);
       } catch (e) {
         console.error("[Aegis] Setup error:", e);
@@ -101,7 +108,7 @@ function HomePage() {
     }
     
     setup();
-  }, [isConnected, publicClient, sessionAccount]);
+  }, [isConnected, publicClient, sessionAccount, address]);
 
   async function handleConnect() {
     const connector = connectors[0];
@@ -137,7 +144,7 @@ function HomePage() {
       const perm = await grantPermissions(sessionAccount, walletClient, chainId);
       setPermission(perm);
       
-      localStorage.setItem("metaaegis_permission", JSON.stringify(perm));
+      localStorage.setItem(`metaaegis_permission_${address}`, JSON.stringify(perm));
       
       console.log("[Aegis] ✅ Permissions granted!");
     } catch (error) {
@@ -184,14 +191,28 @@ function HomePage() {
               <button
                 onClick={() => {
                   connector?.disconnect?.();
-                  localStorage.removeItem('metaaegis_permission');
-                  localStorage.removeItem('metaaegis_safe_address');
-                  localStorage.removeItem('metaaegis_session_key');
                   window.location.reload();
                 }}
-                className="text-xs text-zinc-500 hover:text-red-400 transition"
+                className="text-xs border border-zinc-700 hover:border-red-500 px-3 py-1 transition"
               >
                 DISCONNECT
+              </button>
+              <button
+                onClick={() => {
+                  if (confirm('Reset all data for this wallet? You will need to grant permissions again.')) {
+                    if (address) {
+                      localStorage.removeItem(`metaaegis_permission_${address}`);
+                      localStorage.removeItem(`metaaegis_safe_address_${address}`);
+                      localStorage.removeItem(`metaaegis_session_key_${address}`);
+                    }
+                    connector?.disconnect?.();
+                    window.location.reload();
+                  }
+                }}
+                className="text-xs border border-zinc-700 hover:border-red-500 px-3 py-1 transition text-zinc-500 hover:text-red-400"
+                title="Clear all saved data for this wallet"
+              >
+                RESET
               </button>
             </div>
           ) : (
@@ -309,7 +330,9 @@ function HomePage() {
                     onChange={(e) => {
                       const newAddress = e.target.value;
                       setSafeAddress(newAddress);
-                      localStorage.setItem("metaaegis_safe_address", newAddress);
+                      if (address) {
+                        localStorage.setItem(`metaaegis_safe_address_${address}`, newAddress);
+                      }
                     }}
                     placeholder="0x..."
                     className="w-full border border-zinc-800 focus:border-cyan-400/50 px-4 py-3 font-mono text-xs text-zinc-300 outline-none transition-all bg-transparent"
