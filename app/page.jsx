@@ -1,15 +1,16 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useAccount, useConnect, usePublicClient, useWalletClient, useChainId } from "wagmi";
+import { useState, useEffect, useCallback } from "react";
+import { useAccount, useConnect, usePublicClient, useWalletClient, useChainId, useSwitchChain } from "wagmi";
 import { createSessionAccount, grantPermissions, initSmartAccountContext } from "../src/lib/smartAccount";
 import Dashboard from "../src/components/Dashboard";
+
+const SEPOLIA_CHAIN_ID = 11155111;
 
 function HomePage() {
   const [sessionAccount, setSessionAccount] = useState(null);
   const [ctx, setCtx] = useState(null);
   const [permission, setPermission] = useState(() => {
-    // Load permission from localStorage on mount
     if (typeof window === "undefined") return null;
     const saved = localStorage.getItem("metaaegis_permission");
     if (saved) {
@@ -23,12 +24,60 @@ function HomePage() {
   });
   const [safeAddress, setSafeAddress] = useState("");
   const [loading, setLoading] = useState(false);
+  const [switchingChain, setSwitchingChain] = useState(false);
 
-  const { address, isConnected } = useAccount();
+  const { address, isConnected, connector } = useAccount();
   const { connect, connectors } = useConnect();
   const publicClient = usePublicClient();
   const chainId = useChainId();
-  const { data: walletClient } = useWalletClient();
+  const { switchChainAsync } = useSwitchChain();
+  
+  const { data: walletClient, error: walletError, isLoading: walletLoading, refetch: refetchWallet } = useWalletClient();
+
+  // Debug logging
+  useEffect(() => {
+    console.log("[DEBUG] ====== Wallet State ======");
+    console.log("[DEBUG] isConnected:", isConnected);
+    console.log("[DEBUG] address:", address);
+    console.log("[DEBUG] chainId:", chainId);
+    console.log("[DEBUG] connector:", connector?.name);
+    console.log("[DEBUG] walletClient:", walletClient ? "exists" : "undefined");
+    console.log("[DEBUG] walletError:", walletError?.message || "none");
+    console.log("[DEBUG] walletLoading:", walletLoading);
+    console.log("[DEBUG] ===========================");
+  }, [isConnected, address, chainId, connector, walletClient, walletError, walletLoading]);
+
+  // Handle chain mismatch - force switch to Sepolia
+  const handleChainSwitch = useCallback(async () => {
+    if (!isConnected || !switchChainAsync || switchingChain) return;
+    
+    // If there's a chain mismatch error, try to switch
+    if (walletError?.message?.includes("chain") || walletError?.message?.includes("Chain")) {
+      console.log("[Aegis] Chain mismatch detected, requesting switch to Sepolia...");
+      setSwitchingChain(true);
+      
+      try {
+        await switchChainAsync({ chainId: SEPOLIA_CHAIN_ID });
+        console.log("[Aegis] ✅ Chain switched to Sepolia!");
+        // Refetch wallet client after chain switch
+        setTimeout(() => {
+          refetchWallet?.();
+        }, 500);
+      } catch (error) {
+        console.error("[Aegis] Failed to switch chain:", error);
+        alert("Please manually switch MetaMask Flask to Sepolia network!");
+      } finally {
+        setSwitchingChain(false);
+      }
+    }
+  }, [isConnected, switchChainAsync, switchingChain, walletError, refetchWallet]);
+
+  // Auto-switch chain when error detected
+  useEffect(() => {
+    if (walletError && isConnected) {
+      handleChainSwitch();
+    }
+  }, [walletError, isConnected, handleChainSwitch]);
 
   // Auto-create session account when connected
   useEffect(() => {
@@ -52,15 +101,30 @@ function HomePage() {
   }, [isConnected, publicClient, sessionAccount]);
 
   async function handleConnect() {
-    const connector = connectors[0]; // metaMask
+    const connector = connectors[0];
     if (connector) {
-      connect({ connector });
+      console.log("[Aegis] Connecting with connector:", connector.name);
+      try {
+        await connect({ connector });
+      } catch (error) {
+        console.error("[Aegis] Connect error:", error);
+      }
     }
   }
 
   async function handleGrantProtection() {
-    if (!sessionAccount || !walletClient) {
-      alert("Session account or wallet client not ready!");
+    if (!sessionAccount) {
+      alert("Session account not ready!");
+      return;
+    }
+    
+    if (!walletClient) {
+      // Try to switch chain first
+      if (walletError) {
+        await handleChainSwitch();
+        return;
+      }
+      alert("Wallet client not ready!");
       return;
     }
     
@@ -70,7 +134,6 @@ function HomePage() {
       const perm = await grantPermissions(sessionAccount, walletClient, chainId);
       setPermission(perm);
       
-      // Save permission to localStorage
       localStorage.setItem("metaaegis_permission", JSON.stringify(perm));
       
       console.log("[Aegis] ✅ Permissions granted!");
@@ -83,6 +146,8 @@ function HomePage() {
   }
 
   const ready = isConnected && sessionAccount;
+  const walletReady = !!walletClient;
+  const hasChainError = walletError?.message?.includes("chain") || walletError?.message?.includes("Chain");
 
   return (
     <div className="min-h-screen bg-zinc-950 text-gray-100">
@@ -105,11 +170,14 @@ function HomePage() {
           </div>
 
           {isConnected ? (
-            <div className="flex items-center gap-2 border border-zinc-700 px-3 py-1.5">
-              <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-mono">EOA</span>
-              <span className="text-xs font-mono text-zinc-300">
-                {address.slice(0, 4)}···{address.slice(-4)}
-              </span>
+            <div className="flex items-center gap-4">
+              <span className="text-xs text-zinc-500">{connector?.name}</span>
+              <div className="flex items-center gap-2 border border-zinc-700 px-3 py-1.5">
+                <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-mono">EOA</span>
+                <span className="text-xs font-mono text-zinc-300">
+                  {address.slice(0, 4)}···{address.slice(-4)}
+                </span>
+              </div>
             </div>
           ) : (
             <button
@@ -193,8 +261,25 @@ function HomePage() {
                 </div>
 
                 <div className="text-xs text-zinc-500 mt-3 flex items-center gap-2">
-                  <span className={`inline-block w-2 h-2 rounded-full ${walletClient ? 'bg-emerald-400' : 'bg-yellow-400'} animate-pulse`} />
-                  Wallet Client: {walletClient ? "Ready ✅" : "Loading..."}
+                  <span className={`inline-block w-2 h-2 rounded-full ${walletReady ? 'bg-emerald-400' : hasChainError ? 'bg-orange-400' : 'bg-yellow-400'} animate-pulse`} />
+                  Wallet Client: {walletReady ? "Ready ✅" : walletLoading ? "Loading..." : hasChainError ? "Wrong Network ⚠️" : "Error ❌"}
+                </div>
+                
+                {hasChainError && (
+                  <div className="mt-2">
+                    <button
+                      onClick={handleChainSwitch}
+                      disabled={switchingChain}
+                      className="text-xs bg-orange-500 hover:bg-orange-600 text-white px-3 py-1.5 rounded transition-all disabled:opacity-50"
+                    >
+                      {switchingChain ? "Switching..." : "Switch to Sepolia"}
+                    </button>
+                  </div>
+                )}
+                
+                <div className="text-xs text-zinc-500 flex items-center gap-2">
+                  <span className={`inline-block w-2 h-2 rounded-full ${chainId === SEPOLIA_CHAIN_ID ? 'bg-emerald-400' : 'bg-red-400'}`} />
+                  Chain: {chainId} {chainId === SEPOLIA_CHAIN_ID ? "✅" : "(need 11155111)"}
                 </div>
               </div>
               
@@ -226,10 +311,10 @@ function HomePage() {
 
               <button
                 onClick={handleGrantProtection}
-                disabled={loading || !safeAddress || !walletClient}
+                disabled={loading || !safeAddress || !walletReady}
                 className="w-full bg-cyan-400 hover:bg-cyan-300 text-zinc-950 px-8 py-4 font-bold tracking-wide transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {loading ? "AUTHORIZING..." : !walletClient ? "WAITING FOR WALLET..." : "GRANT PROTECTION"}
+                {loading ? "AUTHORIZING..." : !walletReady ? (hasChainError ? "SWITCH NETWORK FIRST" : "WAITING FOR WALLET...") : "GRANT PROTECTION"}
               </button>
             </div>
           ) : (
