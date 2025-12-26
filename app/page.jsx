@@ -8,17 +8,29 @@ import Dashboard from "../src/components/Dashboard";
 function HomePage() {
   const [sessionAccount, setSessionAccount] = useState(null);
   const [ctx, setCtx] = useState(null);
-  const [permission, setPermission] = useState(null);
+  const [permission, setPermission] = useState(() => {
+    // Load permission from localStorage on mount
+    if (typeof window === "undefined") return null;
+    const saved = localStorage.getItem("metaaegis_permission");
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.error("[Aegis] Failed to parse saved permission:", e);
+      }
+    }
+    return null;
+  });
   const [safeAddress, setSafeAddress] = useState("");
   const [loading, setLoading] = useState(false);
 
   const { address, isConnected } = useAccount();
   const { connect, connectors } = useConnect();
   const publicClient = usePublicClient();
-  const { data: walletClient } = useWalletClient();
   const chainId = useChainId();
+  const { data: walletClient } = useWalletClient();
 
-  // Auto-create session account
+  // Auto-create session account when connected
   useEffect(() => {
     async function setup() {
       if (!isConnected || !publicClient || sessionAccount) return;
@@ -39,26 +51,15 @@ function HomePage() {
     setup();
   }, [isConnected, publicClient, sessionAccount]);
 
-  // Debug walletClient
-  useEffect(() => {
-    console.log("[DEBUG] walletClient changed:", walletClient);
-  }, [walletClient]);
-
   async function handleConnect() {
-    const connector = connectors[0];
+    const connector = connectors[0]; // metaMask
     if (connector) {
       connect({ connector });
     }
   }
 
   async function handleGrantProtection() {
-    console.log("[DEBUG] handleGrantProtection called");
-    console.log("[DEBUG] sessionAccount:", sessionAccount);
-    console.log("[DEBUG] walletClient:", walletClient);
-    console.log("[DEBUG] chainId:", chainId);
-    
     if (!sessionAccount || !walletClient) {
-      console.error("[DEBUG] Missing:", { sessionAccount: !!sessionAccount, walletClient: !!walletClient });
       alert("Session account or wallet client not ready!");
       return;
     }
@@ -68,6 +69,10 @@ function HomePage() {
       console.log("[Aegis] Granting permissions...");
       const perm = await grantPermissions(sessionAccount, walletClient, chainId);
       setPermission(perm);
+      
+      // Save permission to localStorage
+      localStorage.setItem("metaaegis_permission", JSON.stringify(perm));
+      
       console.log("[Aegis] ✅ Permissions granted!");
     } catch (error) {
       console.error("[Aegis] Permission error:", error);
@@ -76,6 +81,8 @@ function HomePage() {
       setLoading(false);
     }
   }
+
+  const ready = isConnected && sessionAccount;
 
   return (
     <div className="min-h-screen bg-zinc-950 text-gray-100">
@@ -159,7 +166,7 @@ function HomePage() {
                 CONNECT WALLET
               </button>
             </div>
-          ) : !sessionAccount ? (
+          ) : !ready ? (
             <div className="p-12 text-center">
               <div className="text-6xl mb-6 opacity-50">🔧</div>
               <h3 className="text-2xl font-bold mb-3 tracking-tight">INITIALIZING</h3>
@@ -173,16 +180,25 @@ function HomePage() {
                 CONFIGURE PROTECTION
               </h3>
               
-              <div className="space-y-6 mb-8">
-                <div>
-                  <label className="block text-xs text-zinc-500 uppercase tracking-wider mb-2 font-mono">
-                    Protected Account
-                  </label>
-                  <div className="border border-zinc-800 px-4 py-3 font-mono text-xs text-zinc-400">
-                    {sessionAccount.address}
-                  </div>
+              {/* Connection Info */}
+              <div className="mb-6 bg-zinc-900/50 border border-zinc-800 p-4 space-y-2">
+                <div className="text-xs text-zinc-500 uppercase tracking-wide">Your EOA</div>
+                <div className="text-sm text-green-400 font-mono">
+                  {address.slice(0, 8)}...{address.slice(-6)}
+                </div>
+                
+                <div className="text-xs text-zinc-500 uppercase tracking-wide mt-3">Your Smart Account (Session)</div>
+                <div className="text-sm text-emerald-400 font-mono">
+                  {sessionAccount.address.slice(0, 8)}...{sessionAccount.address.slice(-6)}
                 </div>
 
+                <div className="text-xs text-zinc-500 mt-3 flex items-center gap-2">
+                  <span className={`inline-block w-2 h-2 rounded-full ${walletClient ? 'bg-emerald-400' : 'bg-yellow-400'} animate-pulse`} />
+                  Wallet Client: {walletClient ? "Ready ✅" : "Loading..."}
+                </div>
+              </div>
+              
+              <div className="space-y-6 mb-8">
                 <div>
                   <label className="block text-xs text-zinc-500 uppercase tracking-wider mb-2 font-mono">
                     Safe Vault Address
@@ -210,10 +226,10 @@ function HomePage() {
 
               <button
                 onClick={handleGrantProtection}
-                disabled={loading || !safeAddress}
+                disabled={loading || !safeAddress || !walletClient}
                 className="w-full bg-cyan-400 hover:bg-cyan-300 text-zinc-950 px-8 py-4 font-bold tracking-wide transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {loading ? "AUTHORIZING..." : "GRANT PROTECTION"}
+                {loading ? "AUTHORIZING..." : !walletClient ? "WAITING FOR WALLET..." : "GRANT PROTECTION"}
               </button>
             </div>
           ) : (

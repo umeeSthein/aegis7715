@@ -15,7 +15,6 @@ export const wagmiConfig = createConfig({
   chains: [sepolia],
   connectors,
   multiInjectedProviderDiscovery: false,
-  ssr: false, // Disable SSR
   transports: {
     [sepolia.id]: http(SEPOLIA_RPC),
   },
