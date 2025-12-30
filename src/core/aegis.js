@@ -61,7 +61,7 @@ export async function grantProtection(smartAccount, walletClient) {
   try {
     const client = walletClient.extend(erc7715ProviderActions());
     const currentTime = Math.floor(Date.now() / 1000);
-    const expiry = currentTime + 30 * 24 * 60 * 60; // 30 days
+    const expiry = currentTime + 30 * 24 * 60 * 60; 
 
     const permissions = await client.requestExecutionPermissions([{
       chainId: CHAIN_ID,
@@ -76,7 +76,7 @@ export async function grantProtection(smartAccount, walletClient) {
       permission: {
         type: "native-token-periodic",
         data: {
-          periodAmount: 100000000000000000n, // 0.1 ETH
+          periodAmount: 100000000000000000n, 
           periodDuration: 3600, // 1 hour for demo
           justification: "Emergency asset rescue protection",
         },
@@ -85,7 +85,7 @@ export async function grantProtection(smartAccount, walletClient) {
 
     console.log("[Aegis] Protection granted!");
     
-    // Save to localStorage
+    
     localStorage.setItem("metaaegis_permission", JSON.stringify(permissions[0]));
     
     return permissions[0];
@@ -103,7 +103,7 @@ export async function executeRescue(aegis, { to, amount, token }) {
 
   const { bundler, pimlico, smartAccount, publicClient } = aegis;
   
-  // Get permission from storage
+  
   const permStr = localStorage.getItem("metaaegis_permission");
   if (!permStr) {
     throw new Error("No protection permission found");
@@ -118,15 +118,15 @@ export async function executeRescue(aegis, { to, amount, token }) {
 
   const { delegationManager } = signerMeta;
 
-  // Get gas prices
+  
   const { fast: fee } = await pimlico.getUserOperationGasPrice();
 
-  // Prepare transfer calldata
+  
   let calldata;
   if (token === "ETH") {
     calldata = "0x";
   } else {
-    // ERC20 transfer
+    
     const transferAbi = [{
       name: "transfer",
       type: "function",
@@ -143,7 +143,7 @@ export async function executeRescue(aegis, { to, amount, token }) {
     });
   }
 
-  // Execute with delegation
+  
   const hash = await bundler.sendUserOperationWithDelegation({
     publicClient,
     account: smartAccount,

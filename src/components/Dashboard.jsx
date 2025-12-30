@@ -14,10 +14,10 @@ export default function Dashboard({ sessionAccount, ctx, safeAddress, permission
   const [rescuingETH, setRescuingETH] = useState(false);
   const [rescuingUSDC, setRescuingUSDC] = useState(false);
   const [lastRescueTime, setLastRescueTime] = useState(0);
-  const [showAlert, setShowAlert] = useState(null); // 'eth' or 'usdc'
+  const [showAlert, setShowAlert] = useState(null); 
 
   const ETH_THRESHOLD = parseEther("0.005");
-  const USDC_THRESHOLD = 500000n; // 0.5 USDC (6 decimals)
+  const USDC_THRESHOLD = 500000n; 
   const USDC_ADDRESS = "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238";
 
   const addLog = useCallback((message) => {
@@ -26,7 +26,7 @@ export default function Dashboard({ sessionAccount, ctx, safeAddress, permission
     setLogs(prev => [{ time: timestamp, message }, ...prev].slice(0, 10));
   }, []);
 
-  // Monitor balances
+  
   useEffect(() => {
     console.log("[Monitor] useEffect triggered", { ctx: !!ctx, monitoring, permission: !!permission });
     
