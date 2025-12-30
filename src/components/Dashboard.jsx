@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { formatEther, parseEther } from "viem";
 import { rescueAssets } from "../lib/smartAccount";
 
@@ -14,24 +14,38 @@ export default function Dashboard({ sessionAccount, ctx, safeAddress, permission
   const [rescuingETH, setRescuingETH] = useState(false);
   const [rescuingUSDC, setRescuingUSDC] = useState(false);
   const [lastRescueTime, setLastRescueTime] = useState(0);
+  const [showAlert, setShowAlert] = useState(null); // 'eth' or 'usdc'
 
-  const ETH_THRESHOLD = parseEther("0.005"); // If ETH drops below 0.005 → rescue remaining USDC
-  const USDC_THRESHOLD = 500000n; // 0.5 USDC (6 decimals) - If USDC drops below 0.5 → rescue remaining ETH
+  const ETH_THRESHOLD = parseEther("0.005");
+  const USDC_THRESHOLD = 500000n; // 0.5 USDC (6 decimals)
   const USDC_ADDRESS = "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238";
+
+  const addLog = useCallback((message) => {
+    const timestamp = new Date().toLocaleTimeString();
+    console.log(`[Log] ${timestamp} - ${message}`);
+    setLogs(prev => [{ time: timestamp, message }, ...prev].slice(0, 10));
+  }, []);
 
   // Monitor balances
   useEffect(() => {
-    if (!ctx || !monitoring) return;
+    console.log("[Monitor] useEffect triggered", { ctx: !!ctx, monitoring, permission: !!permission });
+    
+    if (!ctx || !monitoring) {
+      console.log("[Monitor] Not starting - ctx or monitoring false");
+      return;
+    }
 
+    console.log("[Monitor] Starting interval...");
+    
     const interval = setInterval(async () => {
       try {
-        // Get EOA balance (not Smart Account!)
+        console.log("[Monitor] 🔄 Checking balances...");
+        
         const ethBal = await ctx.publicClient.getBalance({
           address: eoaAddress,
         });
         setEthBalance(formatEther(ethBal));
 
-        // Get USDC balance
         const usdcBal = await ctx.publicClient.readContract({
           address: USDC_ADDRESS,
           abi: [{
@@ -46,7 +60,8 @@ export default function Dashboard({ sessionAccount, ctx, safeAddress, permission
         });
         setUsdcBalance((Number(usdcBal) / 1000000).toFixed(2));
 
-        // Get Safe balances
+        console.log(`[Monitor] 💰 Balances: ETH=${formatEther(ethBal)}, USDC=${(Number(usdcBal) / 1000000).toFixed(2)}`);
+
         if (safeAddress) {
           const safeEthBal = await ctx.publicClient.getBalance({
             address: safeAddress,
@@ -68,23 +83,26 @@ export default function Dashboard({ sessionAccount, ctx, safeAddress, permission
           setSafeUsdcBalance((Number(safeUsdcBal) / 1000000).toFixed(2));
         }
 
-        // Smart rescue logic with cooldown
         const now = Date.now();
-        const cooldown = 30000; // 30 seconds between rescues
+        const cooldown = 30000;
         
         if (now - lastRescueTime < cooldown) {
           console.log("[Rescue] Cooldown active, skipping...");
           return;
         }
         
-        const ethLow = ethBal < ETH_THRESHOLD && ethBal > 0n;
-        const usdcLow = usdcBal < USDC_THRESHOLD && usdcBal > 0n;
+        const ethStolen = ethBal < ETH_THRESHOLD;
+        const usdcStolen = usdcBal < USDC_THRESHOLD;
         
-        if (ethLow && !usdcLow && usdcBal > 0n && !rescuingUSDC) {
-          // ETH stolen → rescue USDC
+        console.log(`[Rescue] 🎯 Status: ethStolen=${ethStolen}, usdcStolen=${usdcStolen}`);
+        console.log(`[Rescue] ETH: ${formatEther(ethBal)} (threshold: ${formatEther(ETH_THRESHOLD)})`);
+        console.log(`[Rescue] USDC: ${Number(usdcBal)} (threshold: ${Number(USDC_THRESHOLD)})`);
+        
+        if (ethStolen && !usdcStolen && usdcBal > 0n && !rescuingUSDC) {
+          console.log("[Rescue] 🚨 ETH STOLEN! Rescuing remaining USDC...");
           setRescuingUSDC(true);
           setLastRescueTime(now);
-          const msg = `⚠️ ETH below threshold! Rescuing ${(Number(usdcBal) / 1000000).toFixed(2)} USDC...`;
+          const msg = `⚠️ ETH below ${formatEther(ETH_THRESHOLD)}! Rescuing ${(Number(usdcBal) / 1000000).toFixed(2)} USDC...`;
           addLog(msg);
           
           try {
@@ -101,11 +119,11 @@ export default function Dashboard({ sessionAccount, ctx, safeAddress, permission
           }
         }
         
-        if (usdcLow && !ethLow && ethBal > 0n && !rescuingETH) {
-          // USDC stolen → rescue ETH
+        if (usdcStolen && !ethStolen && ethBal > 0n && !rescuingETH) {
+          console.log("[Rescue] 🚨 USDC STOLEN! Rescuing remaining ETH...");
           setRescuingETH(true);
           setLastRescueTime(now);
-          const msg = `⚠️ USDC below threshold! Rescuing ${formatEther(ethBal)} ETH...`;
+          const msg = `⚠️ USDC below 0.5! Rescuing ${formatEther(ethBal)} ETH...`;
           addLog(msg);
           
           try {
@@ -122,8 +140,8 @@ export default function Dashboard({ sessionAccount, ctx, safeAddress, permission
           }
         }
         
-        if (ethLow && usdcLow) {
-          // Both stolen → rescue both!
+        if (ethStolen && usdcStolen) {
+          console.log("[Rescue] 🚨🚨 BOTH STOLEN! Critical rescue...");
           addLog("🚨 CRITICAL! Both assets below threshold!");
           
           if (ethBal > 0n && !rescuingETH) {
@@ -161,14 +179,17 @@ export default function Dashboard({ sessionAccount, ctx, safeAddress, permission
 
       } catch (error) {
         console.error("[Monitor] Error:", error);
+        addLog(`❌ Monitor error: ${error.message}`);
       }
-    }, 3000); // Every 3 seconds
+    }, 3000);
 
-    return () => clearInterval(interval);
-  }, [ctx, monitoring, safeAddress, sessionAccount]);
+    return () => {
+      console.log("[Monitor] Cleanup interval");
+      clearInterval(interval);
+    };
+  }, [ctx, monitoring, safeAddress, permission, eoaAddress, rescuingETH, rescuingUSDC, lastRescueTime, addLog]);
 
-  // Load initial balances
-  async function loadInitialBalances() {
+  const loadInitialBalances = useCallback(async () => {
     if (!ctx) return;
     
     try {
@@ -214,32 +235,76 @@ export default function Dashboard({ sessionAccount, ctx, safeAddress, permission
     } catch (error) {
       console.error("[Load] Error:", error);
     }
-  }
+  }, [ctx, safeAddress, eoaAddress]);
 
   useEffect(() => {
     loadInitialBalances();
-  }, [ctx, safeAddress, eoaAddress]);
-
-  function addLog(message) {
-    const timestamp = new Date().toLocaleTimeString();
-    setLogs(prev => [{ time: timestamp, message }, ...prev].slice(0, 10));
-  }
+  }, [loadInitialBalances]);
 
   function startMonitoring() {
+    console.log("[Dashboard] START MONITORING clicked");
     setMonitoring(true);
     addLog("🛡️ Protection monitoring started");
-    
-    // Load balances immediately when starting
     loadInitialBalances();
   }
 
   function stopMonitoring() {
+    console.log("[Dashboard] STOP MONITORING clicked");
     setMonitoring(false);
     addLog("⏸️ Protection monitoring paused");
   }
 
   return (
     <div className="space-y-6 p-8">
+      {/* Alert Modal */}
+      {showAlert && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/60 backdrop-blur-sm">
+          <div className="relative w-full max-w-lg bg-gradient-to-br from-zinc-900 to-zinc-950 border border-red-500/50 rounded-2xl p-8 shadow-2xl">
+            <div className="text-center mb-6">
+              <div className="text-6xl mb-4">🎭</div>
+              <h3 className="text-2xl font-black mb-2 text-red-400">SIMULATE ATTACK</h3>
+              <div className="text-sm text-zinc-500 uppercase tracking-wider">
+                {showAlert === 'eth' ? 'ETH Drain Simulation' : 'USDC Drain Simulation'}
+              </div>
+            </div>
+
+            <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-6 mb-6">
+              <div className="text-sm text-zinc-300 space-y-3">
+                <p className="font-bold text-red-400">👤 Pretend you're the hacker:</p>
+                <ol className="list-decimal list-inside space-y-2 ml-2">
+                  <li>Open MetaMask Flask</li>
+                  <li>Select your Protected Account:<br/>
+                    <code className="text-xs bg-black/30 px-2 py-1 rounded mt-1 inline-block break-all">
+                      {eoaAddress}
+                    </code>
+                  </li>
+                  <li>Send {showAlert === 'eth' ? 'ALL ETH' : 'ALL USDC'} to any address</li>
+                  <li>Watch MetaAegis automatically rescue the remaining {showAlert === 'eth' ? 'USDC' : 'ETH'}!</li>
+                </ol>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowAlert(null);
+                  addLog(`🎭 Simulating ${showAlert === 'eth' ? 'ETH' : 'USDC'} drain - waiting for attack...`);
+                }}
+                className="flex-1 bg-red-500 hover:bg-red-600 text-white font-bold py-3 rounded-xl transition"
+              >
+                I Understand
+              </button>
+              <button
+                onClick={() => setShowAlert(null)}
+                className="px-6 py-3 border border-zinc-700 hover:border-zinc-500 rounded-xl transition"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Control Panel */}
       <div className="border-b border-zinc-800 pb-6">
         <div className="flex items-center justify-between mb-6">
@@ -269,7 +334,6 @@ export default function Dashboard({ sessionAccount, ctx, safeAddress, permission
 
         {/* Balances Grid */}
         <div className="grid grid-cols-2 gap-6">
-          {/* Protected Account */}
           <div className="border border-zinc-800 p-4">
             <div className="text-[10px] text-zinc-600 uppercase tracking-wider mb-3">Protected Account (EOA)</div>
             <div className="font-mono text-xs text-zinc-500 mb-4 break-all">{eoaAddress}</div>
@@ -293,7 +357,6 @@ export default function Dashboard({ sessionAccount, ctx, safeAddress, permission
             </div>
           </div>
 
-          {/* Safe Vault */}
           <div className="border border-zinc-800 p-4">
             <div className="text-[10px] text-zinc-600 uppercase tracking-wider mb-3">Safe Vault</div>
             <div className="font-mono text-xs text-zinc-500 mb-4 break-all">
@@ -348,19 +411,19 @@ export default function Dashboard({ sessionAccount, ctx, safeAddress, permission
         <div className="grid grid-cols-2 gap-4">
           <button
             className="border border-zinc-700 hover:border-red-500 px-6 py-3 text-sm font-mono uppercase transition"
-            onClick={() => addLog("💡 Use MetaMask to send ETH from Protected Account")}
+            onClick={() => setShowAlert('eth')}
           >
             SIMULATE ETH DRAIN
           </button>
           <button
             className="border border-zinc-700 hover:border-cyan-400 px-6 py-3 text-sm font-mono uppercase transition"
-            onClick={() => addLog("💡 Use MetaMask to send USDC from Protected Account")}
+            onClick={() => setShowAlert('usdc')}
           >
             SIMULATE USDC DRAIN
           </button>
         </div>
         <p className="text-xs text-zinc-600 mt-3">
-          Open MetaMask and manually send funds from your EOA ({eoaAddress.slice(0,8)}...) to test the rescue system.
+          Click buttons above to get instructions for testing the rescue system.
         </p>
       </div>
     </div>
