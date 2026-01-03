@@ -110,7 +110,7 @@ export async function rescueAssets(ctx, permission, params) {
 
 Follow our project journey and see how MetaMask Advanced Permissions transformed emergency asset recovery:
 
-**Twitter:** https://x.com/UShtein
+**Twitter:** https://x.com/UShtein/status/2006080560037515749?s=20
 
 *Featuring @MetaMaskDev - showcasing the power of ERC-7715 for autonomous wallet protection*
 
