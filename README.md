@@ -258,8 +258,3 @@ This project demonstrates:
 **Network:** Sepolia Testnet  
 **License:** MIT  
 
----
-
-**🛡️ When seconds matter, MetaAegis protects.**
-
-*Powered by ERC-7715 Advanced Permissions + MetaMask Smart Accounts*
